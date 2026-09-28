@@ -3,19 +3,11 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import Link from "next/link";
 import {
-  Activity,
-  Bot,
-  Database,
   LayoutDashboard,
-  Play,
-  Users,
-  MessageSquare,
-  Calendar,
-  CheckSquare,
-  ListTree
 } from "lucide-react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Sidebar } from "@/components/sidebar";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -39,64 +31,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <div className="flex h-screen overflow-hidden">
-            {/* Sidebar */}
-            <aside className="w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex-col hidden md:flex">
-              <div className="h-16 flex items-center px-6 border-b border-gray-200 dark:border-gray-800">
-                <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-emerald-600 dark:from-blue-400 dark:to-emerald-400">
-                  CovalClone
-                </span>
-              </div>
-              
-              <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-3">
-                  Core
-                </div>
-                <Link href="/" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white transition-colors">
-                  <LayoutDashboard className="h-4 w-4" />
-                  Dashboard
-                </Link>
-                <Link href="/simulate" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white transition-colors">
-                  <Play className="h-4 w-4" />
-                  Simulate
-                </Link>
-                <Link href="/conversations" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white transition-colors">
-                  <MessageSquare className="h-4 w-4" />
-                  Observe
-                </Link>
-                <Link href="/schedules" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white transition-colors">
-                  <Calendar className="h-4 w-4" />
-                  Schedules
-                </Link>
-                <Link href="/review" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white transition-colors">
-                  <CheckSquare className="h-4 w-4" />
-                  Human Review
-                </Link>
-                <Link href="/traces" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white transition-colors">
-                  <ListTree className="h-4 w-4" />
-                  Traces
-                </Link>
-
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-3 pt-8">
-                  Building Blocks
-                </div>
-                <Link href="/agents" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white transition-colors">
-                  <Bot className="h-4 w-4" />
-                  Agents
-                </Link>
-                <Link href="/personas" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white transition-colors">
-                  <Users className="h-4 w-4" />
-                  Personas
-                </Link>
-                <Link href="/test-sets" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white transition-colors">
-                  <Database className="h-4 w-4" />
-                  Test Sets
-                </Link>
-                <Link href="/metrics" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white transition-colors">
-                  <Activity className="h-4 w-4" />
-                  Metrics
-                </Link>
-              </nav>
-            </aside>
+            <Sidebar />
 
             {/* Main Content */}
             <main className="flex-1 flex flex-col overflow-hidden">
