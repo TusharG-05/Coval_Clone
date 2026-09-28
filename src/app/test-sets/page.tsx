@@ -80,8 +80,8 @@ export default function TestSetsPage() {
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
-        const parsedCases: TestCase[] = results.data
-          .map((row: any) => ({
+        const parsedCases: TestCase[] = (results.data as Record<string, string>[])
+          .map((row) => ({
             scenario: row.scenario || row.Scenario || "",
             expected_outcome: row.expected_outcome || row["Expected Outcome"] || row.expectedOutcome || ""
           }))

@@ -23,6 +23,7 @@ dependencies = [
     "pydantic>=2.13.5",
     "pydub>=0.25.1",
     "python-dotenv>=1.2.3",
+    "ruff>=0.16.9",
     "sqlmodel>=0.0.47",
     "twilio>=9.11.1",
     "uvicorn>=0.54.0",
