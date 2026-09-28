@@ -8,6 +8,7 @@ import {
   Database,
   LayoutDashboard,
   Play,
+  Phone,
   Users,
   MessageSquare,
   Calendar,
@@ -54,6 +55,10 @@ export default function RootLayout({
                 <Link href="/" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white transition-colors">
                   <LayoutDashboard className="h-4 w-4" />
                   Dashboard
+                </Link>
+                <Link href="/call" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors">
+                  <Phone className="h-4 w-4 text-emerald-500" />
+                  Live Call (Mic)
                 </Link>
                 <Link href="/simulate" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white transition-colors">
                   <Play className="h-4 w-4" />
