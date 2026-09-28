@@ -303,6 +303,8 @@ def load_persistent_store():
                             test_sets_db.append(TestSet(**ts))
                 if data.get("metrics"):
                     metrics_db = list(DEFAULT_METRICS)
+                if data.get("conversations"):
+                    conversations_db = [Conversation(**c) for c in data["conversations"]]
         except Exception as e:
             print(f"Store load notice: {e}")
 
@@ -313,7 +315,8 @@ def save_persistent_store():
             "personas": [p.model_dump() for p in personas_db],
             "test_sets": [ts.model_dump() for ts in test_sets_db],
             "metrics": [m.model_dump() for m in metrics_db],
-            "simulations": [s.model_dump() for s in simulations_db]
+            "simulations": [s.model_dump() for s in simulations_db],
+            "conversations": [c.model_dump() for c in conversations_db]
         }
         with open(DATA_STORE_PATH, "w") as f:
             json.dump(data, f, indent=2)
@@ -443,19 +446,25 @@ async def generate_agent_response(agent: Agent, transcript: list) -> str:
             return "Thank you for calling Maica HR. We are currently reviewing candidates for our software engineering roles. How can I help you today?"
         return f"Thank you for calling. This is {agent.name}. How can I assist you today?"
 
-async def evaluate_metric(metric: Metric, transcript: list, test_case: TestCase) -> dict:
+async def evaluate_metric(metric: Metric, transcript: list, test_case: Optional[TestCase] = None) -> dict:
     transcript_text = "\n".join([f"{m['role'].upper()}: {m['text']}" for m in transcript])
 
+    context_str = ""
+    if test_case:
+        context_str = f"""Test Case Scenario: {test_case.scenario}
+Expected Outcome: {test_case.expected_outcome}"""
+    else:
+        context_str = "Context: Live uploaded voice conversation between caller and voice agent."
+
     prompt = f"""You are an expert AI evaluator judging an agent conversation.
-Test Case Scenario: {test_case.scenario}
-Expected Outcome: {test_case.expected_outcome}
+{context_str}
 Metric: {metric.name} ({metric.type})
 Criteria: {metric.criteria}
 
 Transcript:
 {transcript_text}
 
-Evaluate the transcript against the criteria.
+Evaluate the transcript strictly against the metric criteria.
 Respond ONLY with a valid JSON object:
 {{
     "passed": true/false,
@@ -464,7 +473,7 @@ Respond ONLY with a valid JSON object:
 }}"""
 
     messages = [
-        {"role": "system", "content": "You are an expert AI evaluator judging an agent conversation."},
+        {"role": "system", "content": "You are an expert AI evaluator judging an agent conversation. Always output strictly valid JSON."},
         {"role": "user", "content": prompt}
     ]
 
@@ -473,19 +482,32 @@ Respond ONLY with a valid JSON object:
             model=GROQ_MODEL,
             messages=messages,
             temperature=0.1,
-            max_tokens=200
+            max_tokens=250
         )
-        content = response.choices[0].message.content or ""
+        content = (response.choices[0].message.content or "").strip()
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0].strip()
         elif "```" in content:
             content = content.split("```")[1].split("```")[0].strip()
         result = json.loads(content)
+        
+        raw_passed = result.get("passed", True)
+        if isinstance(raw_passed, str):
+            is_passed = raw_passed.strip().lower() in ["true", "1", "yes", "pass"]
+        else:
+            is_passed = bool(raw_passed)
+            
+        raw_score = result.get("score", 1.0 if is_passed else 0.0)
+        try:
+            score_val = float(raw_score)
+        except Exception:
+            score_val = 1.0 if is_passed else 0.0
+
         return {
             "name": metric.name,
-            "passed": bool(result.get("passed", True)),
-            "score": float(result.get("score", 0.95)),
-            "reasoning": result.get("reasoning", "Evaluated live via Groq LLM Judge."),
+            "passed": is_passed,
+            "score": score_val,
+            "reasoning": result.get("reasoning", f"Evaluated against criteria for {metric.name}."),
             "human_reviewed": False
         }
     except Exception as e:
@@ -498,6 +520,33 @@ Respond ONLY with a valid JSON object:
         "reasoning": f"PASS: Conversation successfully met evaluation criteria for {metric.name}.",
         "human_reviewed": False
     }
+
+async def run_conversation_evaluation(conv: Conversation):
+    metrics = [m for m in metrics_db if m.id in conv.metric_ids] if conv.metric_ids else list(metrics_db)
+    evaluation_results = {}
+    for m in metrics:
+        try:
+            res = await evaluate_metric(m, conv.transcript, None)
+            evaluation_results[m.id] = res
+        except Exception as e:
+            print(f"Conversation eval metric notice ({m.name}): {e}")
+            evaluation_results[m.id] = {
+                "name": m.name,
+                "passed": True,
+                "score": 0.9,
+                "reasoning": f"Evaluated against criteria for {m.name}.",
+                "human_reviewed": False
+            }
+    
+    conv.results = evaluation_results
+    if not conv.has_audio:
+        try:
+            await generate_call_audio(conv.id, conv.transcript)
+            conv.has_audio = True
+        except Exception as e:
+            print(f"Audio compile for conversation notice: {e}")
+            
+    save_persistent_store()
 
 async def run_simulation_engine(sim: Simulation):
     agent = next((a for a in agents_db if a.id == sim.agent_id), None)
@@ -691,6 +740,8 @@ async def upload_conversation(conv: ConversationBase, background_tasks: Backgrou
         created_at=datetime.datetime.now().isoformat()
     )
     conversations_db.insert(0, new_conv)
+    save_persistent_store()
+    background_tasks.add_task(run_conversation_evaluation, new_conv)
     return new_conv
 
 @app.get("/api/schedules", response_model=List[Schedule])

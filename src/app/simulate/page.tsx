@@ -31,10 +31,20 @@ export default function SimulatePage() {
         fetch("http://localhost:8000/api/test-sets"),
         fetch("http://localhost:8000/api/metrics")
       ]);
-      setAgents(await aRes.json());
-      setPersonas(await pRes.json());
-      setTestSets(await tsRes.json());
-      setMetrics(await mRes.json());
+      const [aData, pData, tsData, mData] = await Promise.all([
+        aRes.json(),
+        pRes.json(),
+        tsRes.json(),
+        mRes.json()
+      ]);
+      setAgents(aData);
+      setPersonas(pData);
+      setTestSets(tsData);
+      setMetrics(mData);
+      setFormData(prev => ({
+        ...prev,
+        metric_ids: prev.metric_ids.length > 0 ? prev.metric_ids : mData.map((m: any) => m.id)
+      }));
       fetchSimulations();
     } catch (e) {
       console.error(e);
@@ -95,6 +105,7 @@ export default function SimulatePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
+          metric_ids: formData.metric_ids.length > 0 ? formData.metric_ids : metrics.map(m => m.id),
           mutations: Object.keys(formData.mutations).length > 0 ? formData.mutations : undefined
         }),
       });
@@ -210,7 +221,16 @@ export default function SimulatePage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Metrics to track</label>
+                <div className="flex justify-between items-center mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Metrics to track</label>
+                <button 
+                  type="button" 
+                  onClick={() => setFormData(p => ({ ...p, metric_ids: p.metric_ids.length === metrics.length ? [] : metrics.map(m => m.id) }))}
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  {formData.metric_ids.length === metrics.length ? "Deselect All" : "Select All"}
+                </button>
+              </div>
                 {metrics.length === 0 ? (
                   <div className="bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg p-3 text-gray-500 text-sm">
                     No metrics available. Please create metrics first.
