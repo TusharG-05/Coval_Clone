@@ -48,6 +48,8 @@ export interface MetricResult {
 export interface Message {
   role: string;
   text: string;
+  time?: string;
+  latency_ms?: number;
 }
 
 export interface Simulation {
@@ -61,6 +63,7 @@ export interface Simulation {
   created_at: string;
   results?: Record<string, MetricResult>;
   transcript?: Message[];
+  has_audio?: boolean;
 }
 
 export interface Conversation {
@@ -69,6 +72,7 @@ export interface Conversation {
   metric_ids: string[];
   created_at: string;
   results?: Record<string, MetricResult>;
+  has_audio?: boolean;
 }
 
 export interface Schedule {
