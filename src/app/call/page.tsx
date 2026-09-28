@@ -361,8 +361,8 @@ export default function LiveCallPage() {
         )}
       </div>
 
+      {/* Pre-Call Setup Cards */}
       {!isCalling && (
-        {/* Pre-Call Setup Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Agent Picker */}
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5 shadow-sm space-y-3">

@@ -56,7 +56,7 @@ function parseTranscriptText(rawText: string) {
   const TIMESTAMPS = ["00:04", "00:18", "01:05", "01:42", "02:30", "03:15", "03:26", "04:10", "04:22", "04:50"];
   result.forEach((item, idx) => {
     if (!item.time) {
-      item.time = TIMESTAMPS[idx] || `0${idx // 2}:20`;
+      item.time = TIMESTAMPS[idx] || ('0' + Math.floor(idx / 2) + ':20');
     }
   });
 
