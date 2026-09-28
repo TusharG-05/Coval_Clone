@@ -12,7 +12,8 @@ import {
   MessageSquare,
   Calendar,
   CheckSquare,
-  ListTree
+  ListTree,
+  Phone
 } from "lucide-react";
 
 export function Sidebar() {
@@ -42,6 +43,10 @@ export function Sidebar() {
         <Link href="/" className={getLinkClass("/")}>
           <LayoutDashboard className="h-4 w-4" />
           Dashboard
+        </Link>
+        <Link href="/call" className={getLinkClass("/call")}>
+          <Phone className="h-4 w-4" />
+          Live Call (Mic)
         </Link>
         <Link href="/simulate" className={getLinkClass("/simulate")}>
           <Play className="h-4 w-4" />
