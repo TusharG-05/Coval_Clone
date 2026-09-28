@@ -177,10 +177,10 @@ export default function TestSetsPage() {
             </div>
             
             <div className="pt-6 border-t border-gray-200 dark:border-gray-800">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-4 gap-4">
-                <h3 className="text-md font-semibold text-gray-900 dark:text-white">Test Cases</h3>
+              <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end mb-4 gap-4 w-full">
+                <h3 className="text-md font-semibold text-gray-900 dark:text-white whitespace-nowrap">Test Cases</h3>
                 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full xl:w-auto">
                   {/* CSV Upload */}
                   <div className="relative">
                     <input 
@@ -198,10 +198,10 @@ export default function TestSetsPage() {
                   </div>
 
                   {/* AI Generation Tools */}
-                  <div className="flex items-center max-w-xs">
+                  <div className="flex items-center flex-1 sm:max-w-md w-full">
                     <input 
-                      placeholder="AI Prompt..."
-                      className="bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-l-lg p-2 text-sm text-gray-900 dark:text-white outline-none focus:border-purple-500 w-48"
+                      placeholder="Generate with AI..."
+                      className="flex-1 bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-l-lg p-2 text-sm text-gray-900 dark:text-white outline-none focus:border-purple-500 min-w-0"
                       value={aiPrompt}
                       onChange={e => setAiPrompt(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleGenerateAI())}

@@ -1,11 +1,27 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Bot, Plus, X, Globe, Phone, Code, Cpu } from "lucide-react";
+import { Bot, Plus, X, Globe, Phone, Code, Cpu, Info } from "lucide-react";
+
+const InfoTooltip = ({ content, onClick }: { content: string, onClick?: () => void }) => (
+  <div className="relative group inline-block ml-2 cursor-pointer">
+    <Info className="w-4 h-4 text-gray-500 hover:text-blue-400 transition-colors" />
+    <div className="absolute z-10 bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 bg-gray-800 text-white text-xs rounded shadow-lg p-3 border border-gray-700 font-normal">
+      <p className="mb-2 text-gray-300 leading-relaxed">{content}</p>
+      {onClick && (
+        <button type="button" onClick={onClick} className="text-blue-400 hover:text-blue-300 hover:underline font-semibold block text-left">
+          Click here for exact steps →
+        </button>
+      )}
+      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+    </div>
+  </div>
+);
 
 import { Agent } from "@/types";
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [helpModal, setHelpModal] = useState<'credentials' | 'caller_id' | null>(null);
   
   const initialFormData = {
     name: "",
@@ -34,7 +50,7 @@ export default function AgentsPage() {
     if (type === "internal") newConfig = { system_prompt: "" };
     if (type === "rest_api") newConfig = { endpoint_url: "", api_key: "" };
     if (type === "websocket") newConfig = { ws_url: "", auth_token: "" };
-    if (type === "phone") newConfig = { phone_number: "", twilio_account_sid: "", twilio_auth_token: "" };
+    if (type === "phone") newConfig = { phone_number: "", twilio_account_sid: "", twilio_auth_token: "", caller_id: "" };
     
     setFormData({
       ...formData,
@@ -219,7 +235,13 @@ export default function AgentsPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm text-gray-300 mb-1">Twilio Account SID</label>
+                      <label className="flex items-center text-sm text-gray-300 mb-1 font-medium">
+                        Twilio Account SID
+                        <InfoTooltip 
+                          content="Your unique Twilio Account Identifier used to authenticate API requests to make phone calls." 
+                          onClick={() => setHelpModal('credentials')} 
+                        />
+                      </label>
                       <input 
                         type="text" 
                         className="w-full bg-gray-900 border border-gray-800 rounded p-2 text-white outline-none focus:border-amber-500"
@@ -228,7 +250,13 @@ export default function AgentsPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm text-gray-300 mb-1">Twilio Auth Token</label>
+                      <label className="flex items-center text-sm text-gray-300 mb-1 font-medium">
+                        Twilio Auth Token
+                        <InfoTooltip 
+                          content="Your secret Twilio authentication token. Keep this safe and do not share it." 
+                          onClick={() => setHelpModal('credentials')} 
+                        />
+                      </label>
                       <input 
                         type="password" 
                         className="w-full bg-gray-900 border border-gray-800 rounded p-2 text-white outline-none focus:border-amber-500"
@@ -236,6 +264,22 @@ export default function AgentsPage() {
                         onChange={(e) => setFormData({...formData, connection_config: { ...formData.connection_config, twilio_auth_token: e.target.value }})}
                       />
                     </div>
+                  </div>
+                  <div className="mt-4">
+                    <label className="flex items-center text-sm text-gray-300 mb-1 font-medium">
+                      Custom Caller ID (Optional)
+                      <InfoTooltip 
+                        content="The phone number that will appear on Caller ID. It MUST be a verified number or a purchased Twilio number in your account." 
+                        onClick={() => setHelpModal('caller_id')} 
+                      />
+                    </label>
+                    <input 
+                      type="tel" 
+                      placeholder="+1 (Your Personal Number)"
+                      className="w-full bg-gray-900 border border-gray-800 rounded p-2 text-white outline-none focus:border-amber-500"
+                      value={(formData.connection_config.caller_id as string) || ""}
+                      onChange={(e) => setFormData({...formData, connection_config: { ...formData.connection_config, caller_id: e.target.value }})}
+                    />
                   </div>
                 </>
               )}
@@ -296,6 +340,44 @@ export default function AgentsPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {helpModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 max-w-md w-full relative">
+            <button onClick={() => setHelpModal(null)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
+              <X className="w-5 h-5" />
+            </button>
+            
+            {helpModal === 'credentials' ? (
+              <>
+                <h2 className="text-xl font-bold text-white mb-4">How to get Twilio Credentials</h2>
+                <ol className="list-decimal list-inside space-y-3 text-gray-300">
+                  <li>Go to <strong>twilio.com</strong> and create a free account.</li>
+                  <li>Upgrade your account (requires adding a $20 balance) to unlock outbound dialing. Free trials cannot call unverified numbers.</li>
+                  <li>Navigate to your main <strong>Console Dashboard</strong>.</li>
+                  <li>Scroll down to the <strong>Account Info</strong> section.</li>
+                  <li>Copy the <strong>Account SID</strong> and <strong>Auth Token</strong>.</li>
+                </ol>
+              </>
+            ) : (
+              <>
+                <h2 className="text-xl font-bold text-white mb-4">How to verify a Caller ID</h2>
+                <ol className="list-decimal list-inside space-y-3 text-gray-300">
+                  <li>Log in to your <strong>Twilio Dashboard</strong>.</li>
+                  <li>Go to <strong>Phone Numbers &gt; Manage &gt; Verified Caller IDs</strong>.</li>
+                  <li>Click <strong>Add a new Caller ID</strong>.</li>
+                  <li>Enter your personal phone number and verify it via the SMS code Twilio sends you.</li>
+                  <li>Once verified, you can use that exact number in this field!</li>
+                </ol>
+              </>
+            )}
+
+            <button onClick={() => setHelpModal(null)} className="w-full mt-6 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg font-medium transition-colors">
+              Got it
+            </button>
+          </div>
         </div>
       )}
     </div>

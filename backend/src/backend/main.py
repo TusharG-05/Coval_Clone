@@ -10,6 +10,9 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocke
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+
+from sqlmodel import SQLModel, Field, Session, create_engine, select
+from sqlalchemy import Column, JSON
 from dotenv import load_dotenv
 
 from openai import AsyncOpenAI
@@ -62,15 +65,15 @@ simulations_counter = Counter("coval_simulations_total", "Total simulations run"
 metrics_app = make_asgi_app()
 app.mount("/metrics", metrics_app)
 
+
+engine = create_engine(os.getenv("DATABASE_URL"))
+
+def get_session():
+    with Session(engine) as session:
+        yield session
+
 # In-memory storage for our CRUD endpoints
-agents_db = []
-personas_db = []
-test_sets_db = []
-metrics_db = []
-simulations_db = []
-conversations_db = []
-schedules_db = []
-traces_db = []
+
 
 # --- Models ---
 class AgentBase(BaseModel):
@@ -79,18 +82,19 @@ class AgentBase(BaseModel):
     connection_type: str
     connection_config: Dict[str, Any] = {}
 
-class Agent(AgentBase):
-    id: str
-    created_at: str
+class Agent(AgentBase, SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    created_at: str = Field(default_factory=lambda: datetime.datetime.now().isoformat())
+    connection_config: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
 class PersonaBase(BaseModel):
     name: str
     background: str
     tone: str
 
-class Persona(PersonaBase):
-    id: str
-    created_at: str
+class Persona(PersonaBase, SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    created_at: str = Field(default_factory=lambda: datetime.datetime.now().isoformat())
 
 class TestCase(BaseModel):
     scenario: str
@@ -99,29 +103,32 @@ class TestCase(BaseModel):
 class TestSetBase(BaseModel):
     name: str
     description: str
-    test_cases: List[TestCase]
+    test_cases: List[dict]
 
-class TestSet(TestSetBase):
-    id: str
-    created_at: str
+class TestSet(TestSetBase, SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    created_at: str = Field(default_factory=lambda: datetime.datetime.now().isoformat())
+    test_cases: list = Field(default_factory=list, sa_column=Column(JSON))
 
 class MetricBase(BaseModel):
     name: str
     type: str 
     criteria: str
 
-class Metric(MetricBase):
-    id: str
-    created_at: str
+class Metric(MetricBase, SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    created_at: str = Field(default_factory=lambda: datetime.datetime.now().isoformat())
 
 class ConversationBase(BaseModel):
-    transcript: List[dict] # list of {"role": "agent"|"user", "text": "..."}
+    transcript: List[dict]
     metric_ids: List[str]
 
-class Conversation(ConversationBase):
-    id: str
-    created_at: str
-    results: Optional[dict] = None
+class Conversation(ConversationBase, SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    created_at: str = Field(default_factory=lambda: datetime.datetime.now().isoformat())
+    transcript: list = Field(default_factory=list, sa_column=Column(JSON))
+    metric_ids: list = Field(default_factory=list, sa_column=Column(JSON))
+    results: Optional[dict] = Field(default=None, sa_column=Column(JSON))
 
 class SimulationBase(BaseModel):
     agent_id: str
@@ -130,12 +137,14 @@ class SimulationBase(BaseModel):
     metric_ids: List[str]
     mutations: Optional[Dict[str, Any]] = None
 
-class Simulation(SimulationBase):
-    id: str
+class Simulation(SimulationBase, SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     status: str
-    created_at: str
-    results: Optional[dict] = None
-    transcript: Optional[List[dict]] = None
+    created_at: str = Field(default_factory=lambda: datetime.datetime.now().isoformat())
+    metric_ids: list = Field(default_factory=list, sa_column=Column(JSON))
+    mutations: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+    results: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+    transcript: Optional[list] = Field(default=None, sa_column=Column(JSON))
 
 class ScheduleBase(BaseModel):
     name: str
@@ -145,18 +154,20 @@ class ScheduleBase(BaseModel):
     test_set_id: str
     metric_ids: List[str]
 
-class Schedule(ScheduleBase):
-    id: str
-    created_at: str
+class Schedule(ScheduleBase, SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    created_at: str = Field(default_factory=lambda: datetime.datetime.now().isoformat())
     next_run_at: str
+    metric_ids: list = Field(default_factory=list, sa_column=Column(JSON))
     
 class TraceBase(BaseModel):
-    run_id: str # simulation or conversation id
-    spans: List[dict] # simplified OpenTelemetry spans
+    run_id: str
+    spans: List[dict]
 
-class Trace(TraceBase):
-    id: str
-    created_at: str
+class Trace(TraceBase, SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    created_at: str = Field(default_factory=lambda: datetime.datetime.now().isoformat())
+    spans: list = Field(default_factory=list, sa_column=Column(JSON))
 
 class ReviewOverride(BaseModel):
     passed: bool
@@ -389,9 +400,12 @@ async def schedule_runner():
                 print(f"Schedule error for {sched.id}: {e}")
         await asyncio.sleep(10) # check every 10 seconds for demo
 
+
 @app.on_event("startup")
 async def startup_event():
+    SQLModel.metadata.create_all(engine)
     asyncio.create_task(schedule_runner())
+
 
 
 # --- Endpoints ---
@@ -400,33 +414,46 @@ def read_root():
     return {"message": "Welcome to the Coval Clone Backend"}
 
 @app.get("/api/agents", response_model=List[Agent])
-def get_agents(): return agents_db
+def get_agents():
+    with Session(engine) as session:
+        return session.exec(select(Agent)).all()
 @app.post("/api/agents", response_model=Agent)
 def create_agent(agent: AgentBase):
-    new_agent = Agent(id=str(uuid.uuid4()), **agent.model_dump(), created_at=datetime.datetime.now().isoformat())
-    agents_db.append(new_agent)
-    return new_agent
+    with Session(engine) as session:
+        new_agent = Agent(id=str(uuid.uuid4()), **agent.model_dump(), created_at=datetime.datetime.now().isoformat())
+        session.add(new_agent)
+        session.commit()
+        session.refresh(new_agent)
+        return new_agent
 
 @app.get("/api/personas", response_model=List[Persona])
-def get_personas(): return personas_db
+def get_personas():
+    with Session(engine) as session:
+        return session.exec(select(Persona)).all()
 @app.post("/api/personas", response_model=Persona)
 def create_persona(persona: PersonaBase):
-    new_persona = Persona(id=str(uuid.uuid4()), **persona.model_dump(), created_at=datetime.datetime.now().isoformat())
-    personas_db.append(new_persona)
-    return new_persona
+    with Session(engine) as session:
+        new_persona = Persona(id=str(uuid.uuid4()), **persona.model_dump(), created_at=datetime.datetime.now().isoformat())
+        session.add(new_persona)
+        session.commit()
+        session.refresh(new_persona)
+        return new_persona
 
 # --- Twilio Voice Integration ---
 
 class CallRequest(BaseModel):
     agent_id: str
     phone_number: str
+    twilio_account_sid: Optional[str] = None
+    twilio_auth_token: Optional[str] = None
+    caller_id: Optional[str] = None
 
 @app.post("/api/call")
 def initiate_call(req: CallRequest):
     """Initiates an outbound call to the target phone number using Twilio."""
-    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-    twilio_number = os.getenv("TWILIO_PHONE_NUMBER")
+    account_sid = req.twilio_account_sid or os.getenv("TWILIO_ACCOUNT_SID")
+    auth_token = req.twilio_auth_token or os.getenv("TWILIO_AUTH_TOKEN")
+    twilio_number = req.caller_id or os.getenv("TWILIO_PHONE_NUMBER")
     ngrok_url = os.getenv("NGROK_BACKEND_URL", "your-ngrok-url.ngrok-free.app") # Must not include https://
 
     if not all([account_sid, auth_token, twilio_number]):
@@ -522,12 +549,17 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 @app.get("/api/test-sets", response_model=List[TestSet])
-def get_test_sets(): return test_sets_db
+def get_test_sets():
+    with Session(engine) as session:
+        return session.exec(select(TestSet)).all()
 @app.post("/api/test-sets", response_model=TestSet)
 def create_test_set(test_set: TestSetBase):
-    new_test_set = TestSet(id=str(uuid.uuid4()), **test_set.model_dump(), created_at=datetime.datetime.now().isoformat())
-    test_sets_db.append(new_test_set)
-    return new_test_set
+    with Session(engine) as session:
+        new_test_set = TestSet(id=str(uuid.uuid4()), **test_set.model_dump(), created_at=datetime.datetime.now().isoformat())
+        session.add(new_test_set)
+        session.commit()
+        session.refresh(new_test_set)
+        return new_test_set
 
 class GenerateRequest(BaseModel):
     description: str
@@ -544,36 +576,53 @@ async def generate_test_cases(req: GenerateRequest):
     }}"""
     try:
         response = await client.chat.completions.create(
-            model="llama-3.1-8b-instant" if os.getenv("GROQ_API_KEY") else "gpt-4o-mini",
-            messages=[{"role": "system", "content": prompt}],
-            response_format={ "type": "json_object" },
+            model="qwen/qwen3.8-27b" if os.getenv("GROQ_API_KEY") else "gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
         )
-        return json.loads(response.choices[0].message.content)
+        content = response.choices[0].message.content
+        # Extract JSON if there is markdown wrapper
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0]
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0]
+        return json.loads(content)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/metrics", response_model=List[Metric])
-def get_metrics(): return metrics_db
+def get_metrics():
+    with Session(engine) as session:
+        return session.exec(select(Metric)).all()
 @app.post("/api/metrics", response_model=Metric)
 def create_metric(metric: MetricBase):
-    new_metric = Metric(id=str(uuid.uuid4()), **metric.model_dump(), created_at=datetime.datetime.now().isoformat())
-    metrics_db.append(new_metric)
-    return new_metric
+    with Session(engine) as session:
+        new_metric = Metric(id=str(uuid.uuid4()), **metric.model_dump(), created_at=datetime.datetime.now().isoformat())
+        session.add(new_metric)
+        session.commit()
+        session.refresh(new_metric)
+        return new_metric
 
 @app.get("/api/simulations", response_model=List[Simulation])
-def get_simulations(): return simulations_db
+def get_simulations():
+    with Session(engine) as session:
+        return session.exec(select(Simulation)).all()
 @app.post("/api/simulations", response_model=Simulation)
 def create_simulation(sim: SimulationBase, background_tasks: BackgroundTasks):
-    new_sim = Simulation(id=str(uuid.uuid4()), **sim.model_dump(), status="running", created_at=datetime.datetime.now().isoformat())
-    simulations_db.append(new_sim)
+    with Session(engine) as session:
+        new_sim = Simulation(id=str(uuid.uuid4()), **sim.model_dump(), status="running", created_at=datetime.datetime.now().isoformat())
+        session.add(new_sim)
+        session.commit()
+        session.refresh(new_sim)
     background_tasks.add_task(run_simulation_engine, new_sim)
     return new_sim
 
 
 # --- Live Conversations ---
 @app.get("/api/conversations", response_model=List[Conversation])
-def get_conversations(): return conversations_db
+def get_conversations():
+    with Session(engine) as session:
+        return session.exec(select(Conversation)).all()
 
 async def evaluate_live_conversation(conv: Conversation):
     conv_metrics = [m for m in metrics_db if m.id in conv.metric_ids]
@@ -598,15 +647,20 @@ async def evaluate_live_conversation(conv: Conversation):
 
 @app.post("/api/conversations", response_model=Conversation)
 def create_conversation(conv: ConversationBase, background_tasks: BackgroundTasks):
-    new_conv = Conversation(id=str(uuid.uuid4()), **conv.model_dump(), created_at=datetime.datetime.now().isoformat())
-    conversations_db.append(new_conv)
+    with Session(engine) as session:
+        new_conv = Conversation(id=str(uuid.uuid4()), **conv.model_dump(), created_at=datetime.datetime.now().isoformat())
+        session.add(new_conv)
+        session.commit()
+        session.refresh(new_conv)
     background_tasks.add_task(evaluate_live_conversation, new_conv)
     return new_conv
 
 
 # --- Scheduled Runs ---
 @app.get("/api/schedules", response_model=List[Schedule])
-def get_schedules(): return schedules_db
+def get_schedules():
+    with Session(engine) as session:
+        return session.exec(select(Schedule)).all()
 
 @app.post("/api/schedules", response_model=Schedule)
 def create_schedule(sched: ScheduleBase):
@@ -617,36 +671,46 @@ def create_schedule(sched: ScheduleBase):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid cron expression: {e}")
         
-    new_sched = Schedule(
-        id=str(uuid.uuid4()), 
-        **sched.model_dump(), 
-        created_at=now.isoformat(),
-        next_run_at=next_run.isoformat()
-    )
-    schedules_db.append(new_sched)
-    return new_sched
+    with Session(engine) as session:
+        new_sched = Schedule(
+            id=str(uuid.uuid4()), 
+            **sched.model_dump(), 
+            created_at=now.isoformat(),
+            next_run_at=next_run.isoformat()
+        )
+        session.add(new_sched)
+        session.commit()
+        session.refresh(new_sched)
+        return new_sched
 
 @app.delete("/api/schedules/{schedule_id}")
 def delete_schedule(schedule_id: str):
-    global schedules_db
-    schedules_db = [s for s in schedules_db if s.id != schedule_id]
+    with Session(engine) as session:
+        sched = session.get(Schedule, schedule_id)
+        if sched:
+            session.delete(sched)
+            session.commit()
     return {"status": "ok"}
 
 
 # --- OpenTelemetry Traces ---
 @app.get("/api/traces/{run_id}", response_model=List[Trace])
 def get_traces_for_run(run_id: str):
-    return [t for t in traces_db if t.run_id == run_id]
+    with Session(engine) as session:
+        return session.exec(select(Trace).where(Trace.run_id == run_id)).all()
 
 @app.post("/api/traces", response_model=Trace)
 def upload_traces(trace: TraceBase):
-    new_trace = Trace(
-        id=str(uuid.uuid4()),
-        **trace.model_dump(),
-        created_at=datetime.datetime.now().isoformat()
-    )
-    traces_db.append(new_trace)
-    return new_trace
+    with Session(engine) as session:
+        new_trace = Trace(
+            id=str(uuid.uuid4()),
+            **trace.model_dump(),
+            created_at=datetime.datetime.now().isoformat()
+        )
+        session.add(new_trace)
+        session.commit()
+        session.refresh(new_trace)
+        return new_trace
 
 
 # --- Human Review ---

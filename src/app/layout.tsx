@@ -76,7 +76,7 @@ export default function RootLayout({
                   Traces
                 </Link>
 
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-3 mt-6">
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-3 pt-8">
                   Building Blocks
                 </div>
                 <Link href="/agents" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white transition-colors">
