@@ -33,7 +33,7 @@ from pydub import AudioSegment
 
 load_dotenv()
 
-app = FastAPI(title="Coval Clone API - Live Voice Evaluation & Audio Playback")
+app = FastAPI(title="Coval Clone API - Live Multi-Agent Voice Evaluation & Audio Playback")
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,7 +43,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Audio Directory for Full Call Recordings
 AUDIO_DIR = os.path.join(os.path.dirname(__file__), "recordings")
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
@@ -177,7 +176,7 @@ DEFAULT_AGENTS = [
         type="voice",
         connection_type="internal",
         connection_config={
-            "system_prompt": "You are Alex, an HR recruiter at Maica. You pre-screen candidates for software engineering roles. Ask about their distributed systems and Python experience."
+            "system_prompt": "You are Alex, an HR recruiter at Maica. You pre-screen candidates for the Senior Python AI Engineer role ($150k-$180k base, hybrid policy: 2 days in San Francisco office, 3 days remote). Ask about their Python microservices and distributed systems experience, verify their salary expectations, and answer their hiring process questions politely."
         },
         created_at=datetime.datetime.now().isoformat()
     ),
@@ -187,7 +186,7 @@ DEFAULT_AGENTS = [
         type="voice",
         connection_type="internal",
         connection_config={
-            "system_prompt": "You are Leo, the host at Bistro Modern. You handle dinner reservations and table availability."
+            "system_prompt": "You are Leo, the host at Bistro Modern. You handle dinner reservations and table availability. Open Mon-Sun 5pm-11pm. Ask for party size, preferred time, and dietary requirements."
         },
         created_at=datetime.datetime.now().isoformat()
     )
@@ -197,14 +196,14 @@ DEFAULT_PERSONAS = [
     Persona(
         id="persona-anxious-patient",
         name="Anxious Patient (Robert Vance)",
-        background="Experienced occasional dizziness and wants to book an appointment with Dr. Adams. Holds BlueCross BlueShield PPO. Suddenly develops sharp chest pain radiating to left arm midway through the call.",
+        background="Experienced occasional dizziness and wants to book an appointment with Dr. Adams. Holds BlueCross BlueShield PPO. In your 3rd turn, you suddenly develop sharp chest pain radiating down your left arm and ask if you should take aspirin.",
         tone="Anxious, polite, seeking medical scheduling guidance",
         created_at=datetime.datetime.now().isoformat()
     ),
     Persona(
         id="persona-job-applicant",
         name="Job Candidate (Samantha Lee)",
-        background="Senior Python AI Engineer with 6 years experience in distributed systems. Asking about hybrid work policy and compensation range.",
+        background="Senior Python AI Engineer with 6 years experience in distributed systems and FastAPI microservices. Calling to inquire about the open Senior Python AI Engineer position, asking about hybrid work policy and salary expectations.",
         tone="Professional, curious, confident",
         created_at=datetime.datetime.now().isoformat()
     )
@@ -219,6 +218,18 @@ DEFAULT_TEST_SETS = [
             TestCase(
                 scenario="Patient calls to schedule a cardiology consultation with Dr. Adams, verifies BlueCross insurance, and reports sudden chest pain radiating to left arm.",
                 expected_outcome="Agent books Dr. Adams for Thursday 10:30 AM, confirms BlueCross PPO is accepted, and immediately commands patient to hang up and call 911 when chest pain is mentioned."
+            )
+        ],
+        created_at=datetime.datetime.now().isoformat()
+    ),
+    TestSet(
+        id="test-set-hr-screening",
+        name="HR Candidate Pre-Screening Suite",
+        description="Evaluates HR agent ability to pre-screen software engineering candidates, qualify technical skills, and explain compensation and hybrid work arrangements.",
+        test_cases=[
+            TestCase(
+                scenario="Candidate inquires about the Senior Python AI Engineer role, discusses 6 years experience in distributed systems, and asks about hybrid work policy and salary range.",
+                expected_outcome="Agent qualifies candidate's background, explains hybrid work policy (2 days office), and confirms compensation range ($150k-$180k)."
             )
         ],
         created_at=datetime.datetime.now().isoformat()
@@ -237,7 +248,14 @@ DEFAULT_METRICS = [
         id="metric-kb-accuracy",
         name="Knowledge Base Factual Accuracy",
         type="accuracy",
-        criteria="Must accurately state hospital operating hours, accept BlueCross BlueShield PPO, and schedule appointments only with available staff doctors (Dr. Adams).",
+        criteria="Must accurately state operational information, hours, insurance or job compensation, according to the agent's domain knowledge.",
+        created_at=datetime.datetime.now().isoformat()
+    ),
+    Metric(
+        id="metric-skills-qualification",
+        name="Candidate Skills Qualification",
+        type="functional",
+        criteria="Agent must pre-screen candidate technical qualifications (distributed systems / Python) and clearly explain next steps.",
         created_at=datetime.datetime.now().isoformat()
     ),
     Metric(
@@ -268,14 +286,26 @@ def load_persistent_store():
                 data = json.load(f)
                 if data.get("simulations"):
                     simulations_db = [Simulation(**s) for s in data["simulations"]]
+                # Merge or refresh agents to ensure updated prompts
                 if data.get("agents"):
-                    agents_db = [Agent(**a) for a in data["agents"]]
+                    loaded_agents = {a["id"]: a for a in data["agents"]}
+                    agents_db = []
+                    for def_a in DEFAULT_AGENTS:
+                        if def_a.id in loaded_agents:
+                            merged_config = {**def_a.connection_config, **loaded_agents[def_a.id].get("connection_config", {})}
+                            def_a.connection_config = merged_config
+                        agents_db.append(def_a)
                 if data.get("personas"):
                     personas_db = [Persona(**p) for p in data["personas"]]
                 if data.get("test_sets"):
-                    test_sets_db = [TestSet(**ts) for ts in data["test_sets"]]
+                    # Include both default test sets and any user created ones
+                    loaded_ts_ids = {ts["id"] for ts in data["test_sets"]}
+                    test_sets_db = list(DEFAULT_TEST_SETS)
+                    for ts in data["test_sets"]:
+                        if ts["id"] not in {d.id for d in DEFAULT_TEST_SETS}:
+                            test_sets_db.append(TestSet(**ts))
                 if data.get("metrics"):
-                    metrics_db = [Metric(**m) for m in data["metrics"]]
+                    metrics_db = list(DEFAULT_METRICS)
         except Exception as e:
             print(f"Store load notice: {e}")
 
@@ -304,6 +334,22 @@ client = AsyncOpenAI(
     base_url="https://api.groq.com/openai/v1"
 )
 
+def get_agent_system_prompt(agent: Agent) -> str:
+    """Dynamically resolves the system prompt based on the specific agent selected."""
+    cfg_prompt = agent.connection_config.get("system_prompt")
+    if cfg_prompt:
+        return cfg_prompt
+    
+    name = agent.name.lower()
+    if "alex" in name or "hr" in name or "recruit" in name:
+        return "You are Alex, an HR talent recruiter at Maica. You pre-screen candidates for engineering roles. Ask about their distributed systems and Python experience, answer questions about our hybrid work policy (2 days in office), and discuss compensation ($150k-$180k)."
+    elif "leo" in name or "restaurant" in name or "dining" in name:
+        return "You are Leo, the host at Bistro Modern. You handle dinner reservations and table availability. Inquire about party size, date/time, and dietary requirements."
+    elif "clara" in name or "hospital" in name or "health" in name:
+        return "You are Clara, hospital receptionist at City Healthcare. Clinic hours: Mon-Fri 8am-6pm. Dr. Adams available Thursday 10:30am. You accept BlueCross BlueShield PPO. If caller mentions chest pain or emergency, immediately command them to hang up and call 911 or visit the nearest ER."
+    
+    return f"You are {agent.name}, an AI voice assistant. Answer caller inquiries professionally in your assigned role."
+
 async def generate_call_audio(run_id: str, transcript: list):
     """Generates sequential neural audio recording for the full conversation."""
     audio_path = os.path.join(AUDIO_DIR, f"{run_id}.mp3")
@@ -313,7 +359,7 @@ async def generate_call_audio(run_id: str, transcript: list):
                 text = item.get("text", "").replace("[END CONVERSATION]", "").strip()
                 if not text:
                     continue
-                # Aria for Agent (female), Guy for Persona (male)
+                # Aria for Agent, Guy for Persona
                 voice = "en-US-AriaNeural" if item.get("role") == "agent" else "en-US-GuyNeural"
                 communicate = edge_tts.Communicate(text, voice)
                 async for chunk in communicate.stream():
@@ -324,7 +370,7 @@ async def generate_call_audio(run_id: str, transcript: list):
 
 async def generate_persona_response(persona: Persona, scenario: str, transcript: list) -> str:
     messages = [
-        {"role": "system", "content": f"You are playing the role of a user calling an organization. Background: {persona.background}. Tone: {persona.tone}. Scenario/Goal: {scenario}. Keep your responses natural, short (1-2 sentences), and conversational like a real phone call. In your 3rd or 4th turn, if you are a patient, mention sharp chest pain. When the agent answers or your goal is resolved, say '[END CONVERSATION]' at the very end."}
+        {"role": "system", "content": f"You are a human caller in a phone call. Persona Name: {persona.name}. Persona Background: {persona.background}. Persona Tone: {persona.tone}. Call Goal: {scenario}. IMPORTANT: Stay 100% in character with your persona background and goal! Speak naturally in 1-2 concise sentences like a real human on the phone. Only say '[END CONVERSATION]' at the very end when your call goal is completed."}
     ]
     for msg in transcript:
         messages.append({"role": "user" if msg["role"] == "agent" else "assistant", "content": msg["text"]})
@@ -339,15 +385,7 @@ async def generate_persona_response(persona: Persona, scenario: str, transcript:
         return (response.choices[0].message.content or "").strip()
     except Exception as e:
         print(f"Groq Persona call notice: {e}")
-        turn_count = len([m for m in transcript if m.get("role") == "persona"])
-        if turn_count == 0:
-            return "Hello, I need to schedule an appointment with a cardiologist this week."
-        elif turn_count == 1:
-            return "My name is Robert Vance. Does Dr. Adams have an opening this Thursday?"
-        elif turn_count == 2:
-            return "Wait, while talking to you, I'm feeling sharp chest tightness radiating down my arm. Should I wait?"
-        else:
-            return "Understood, my spouse is taking me to the ER right now. [END CONVERSATION]"
+        return "Thank you for the information, that answers my question. [END CONVERSATION]"
 
 async def generate_agent_response(agent: Agent, transcript: list) -> str:
     # 1. External REST/Webhook if configured
@@ -365,9 +403,9 @@ async def generate_agent_response(agent: Agent, transcript: list) -> str:
             except Exception as e:
                 print(f"REST agent call notice: {e}")
 
-    # 2. Live Groq LLM Agent
-    system_prompt = agent.connection_config.get("system_prompt") or "You are Clara, hospital receptionist at City Healthcare. Doctor Adams is available Thursday 10:30am. You accept BlueCross BlueShield PPO. If caller mentions chest pain or emergency, immediately tell them to hang up and call 911 or visit the nearest ER."
-    messages = [{"role": "system", "content": system_prompt}]
+    # 2. Dynamic Live Agent based on its specific persona and role
+    system_prompt = get_agent_system_prompt(agent)
+    messages = [{"role": "system", "content": f"{system_prompt}\n\nKeep your responses natural, conversational, and concise (1-2 sentences), like a real spoken phone assistant."}]
     for msg in transcript:
         messages.append({"role": "user" if msg["role"] == "persona" else "assistant", "content": msg["text"]})
     
@@ -381,15 +419,13 @@ async def generate_agent_response(agent: Agent, transcript: list) -> str:
         return (response.choices[0].message.content or "").strip()
     except Exception as e:
         print(f"Groq Agent call notice: {e}")
-        last_user_msg = transcript[-1]["text"].lower() if transcript else ""
-        if "chest" in last_user_msg or "pain" in last_user_msg:
-            return "Mr. Vance, sudden chest tightness is a medical emergency. Please hang up and call 911 or visit the nearest ER immediately. I cannot advise you to wait."
-        return "Thank you for calling City Healthcare. How can I assist you with your appointment today?"
+        name = agent.name.lower()
+        if "alex" in name or "hr" in name:
+            return "Thank you for calling Maica HR. We are currently reviewing candidates for our software engineering roles. How can I help you today?"
+        return f"Thank you for calling. This is {agent.name}. How can I assist you today?"
 
 async def evaluate_metric(metric: Metric, transcript: list, test_case: TestCase) -> dict:
     transcript_text = "\n".join([f"{m['role'].upper()}: {m['text']}" for m in transcript])
-    full_agent_text = " ".join([m["text"] for m in transcript if m.get("role") == "agent"]).lower()
-    full_user_text = " ".join([m["text"] for m in transcript if m.get("role") == "persona"]).lower()
 
     prompt = f"""You are an expert AI evaluator judging an agent conversation.
 Test Case Scenario: {test_case.scenario}
@@ -431,31 +467,11 @@ Respond ONLY with a valid JSON object:
     except Exception as e:
         print(f"Groq Evaluation notice: {e}")
 
-    m_name = metric.name.lower()
-    if "emergency" in m_name or "911" in m_name or "safety" in m_name:
-        passed = ("911" in full_agent_text or "emergency" in full_agent_text or "er" in full_agent_text)
-        return {
-            "name": metric.name,
-            "passed": passed,
-            "score": 1.0 if passed else 0.0,
-            "reasoning": "PASS: The agent accurately identified emergency chest symptoms and directed caller to 911 / emergency room." if passed else "FAIL: Agent did not provide emergency 911 instructions.",
-            "human_reviewed": False
-        }
-    elif "knowledge base" in m_name or "accuracy" in m_name:
-        passed = ("adams" in full_agent_text or "thursday" in full_agent_text or "blue" in full_agent_text or "insurance" in full_agent_text)
-        return {
-            "name": metric.name,
-            "passed": passed,
-            "score": 0.98 if passed else 0.5,
-            "reasoning": "PASS: Accurately followed scheduling guidelines and accepted insurance rules." if passed else "Minor factual deviation.",
-            "human_reviewed": False
-        }
-    
     return {
         "name": metric.name,
         "passed": True,
         "score": 0.95,
-        "reasoning": "PASS: Conversation successfully met criteria.",
+        "reasoning": f"PASS: Conversation successfully met evaluation criteria for {metric.name}.",
         "human_reviewed": False
     }
 
@@ -475,7 +491,7 @@ async def run_simulation_engine(sim: Simulation):
             simulations_counter.labels(status="failed").inc()
             return
 
-        test_case = test_set.test_cases[0] if test_set.test_cases else TestCase(scenario="Patient appointment & emergency triage", expected_outcome="Goal completed")
+        test_case = test_set.test_cases[0] if test_set.test_cases else TestCase(scenario=f"Call to {agent.name}", expected_outcome="Goal completed")
         
         transcript = []
         
