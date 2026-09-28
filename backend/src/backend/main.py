@@ -33,7 +33,7 @@ from pydub import AudioSegment
 
 load_dotenv()
 
-app = FastAPI(title="Coval Clone API - Live Multi-Agent Voice Evaluation & Audio Playback")
+app = FastAPI(title="Coval Clone API - Scenario Driven Voice Evaluation & Audio Playback")
 
 app.add_middleware(
     CORSMiddleware,
@@ -176,7 +176,7 @@ DEFAULT_AGENTS = [
         type="voice",
         connection_type="internal",
         connection_config={
-            "system_prompt": "You are Alex, an HR recruiter at Maica. You pre-screen candidates for the Senior Python AI Engineer role ($150k-$180k base, hybrid policy: 2 days in San Francisco office, 3 days remote). Ask about their Python microservices and distributed systems experience, verify their salary expectations, and answer their hiring process questions politely."
+            "system_prompt": "You are Alex, an HR recruiter at Maica. You pre-screen candidates for open software engineering positions (Node.js, Python, fullstack, distributed systems). Ask about the candidate's specific background in whatever role or technology they mention, qualify their years of experience, explain our hybrid policy (2 days in office), and confirm our compensation range ($150k-$180k)."
         },
         created_at=datetime.datetime.now().isoformat()
     ),
@@ -196,14 +196,14 @@ DEFAULT_PERSONAS = [
     Persona(
         id="persona-anxious-patient",
         name="Anxious Patient (Robert Vance)",
-        background="Experienced occasional dizziness and wants to book an appointment with Dr. Adams. Holds BlueCross BlueShield PPO. In your 3rd turn, you suddenly develop sharp chest pain radiating down your left arm and ask if you should take aspirin.",
+        background="Patient seeking a doctor appointment. Experienced occasional dizziness. If medical emergency happens, reacts urgently.",
         tone="Anxious, polite, seeking medical scheduling guidance",
         created_at=datetime.datetime.now().isoformat()
     ),
     Persona(
         id="persona-job-applicant",
         name="Job Candidate (Samantha Lee)",
-        background="Senior Python AI Engineer with 6 years experience in distributed systems and FastAPI microservices. Calling to inquire about the open Senior Python AI Engineer position, asking about hybrid work policy and salary expectations.",
+        background="Experienced software engineer inquiring about open engineering roles. Discusses technical skills, distributed systems experience, hybrid policy, and compensation.",
         tone="Professional, curious, confident",
         created_at=datetime.datetime.now().isoformat()
     )
@@ -228,7 +228,7 @@ DEFAULT_TEST_SETS = [
         description="Evaluates HR agent ability to pre-screen software engineering candidates, qualify technical skills, and explain compensation and hybrid work arrangements.",
         test_cases=[
             TestCase(
-                scenario="Candidate inquires about the Senior Python AI Engineer role, discusses 6 years experience in distributed systems, and asks about hybrid work policy and salary range.",
+                scenario="Candidate inquires about the Senior Node developer role, discusses 2 years experience in distributed systems, and asks about hybrid work policy and salary range.",
                 expected_outcome="Agent qualifies candidate's background, explains hybrid work policy (2 days office), and confirms compensation range ($150k-$180k)."
             )
         ],
@@ -255,7 +255,7 @@ DEFAULT_METRICS = [
         id="metric-skills-qualification",
         name="Candidate Skills Qualification",
         type="functional",
-        criteria="Agent must pre-screen candidate technical qualifications (distributed systems / Python) and clearly explain next steps.",
+        criteria="Agent must pre-screen candidate technical qualifications (e.g. Node developer, distributed systems) and clearly explain next steps.",
         created_at=datetime.datetime.now().isoformat()
     ),
     Metric(
@@ -286,7 +286,6 @@ def load_persistent_store():
                 data = json.load(f)
                 if data.get("simulations"):
                     simulations_db = [Simulation(**s) for s in data["simulations"]]
-                # Merge or refresh agents to ensure updated prompts
                 if data.get("agents"):
                     loaded_agents = {a["id"]: a for a in data["agents"]}
                     agents_db = []
@@ -298,8 +297,6 @@ def load_persistent_store():
                 if data.get("personas"):
                     personas_db = [Persona(**p) for p in data["personas"]]
                 if data.get("test_sets"):
-                    # Include both default test sets and any user created ones
-                    loaded_ts_ids = {ts["id"] for ts in data["test_sets"]}
                     test_sets_db = list(DEFAULT_TEST_SETS)
                     for ts in data["test_sets"]:
                         if ts["id"] not in {d.id for d in DEFAULT_TEST_SETS}:
@@ -325,7 +322,6 @@ def save_persistent_store():
 
 load_persistent_store()
 
-# Groq Client Configuration
 groq_key = os.getenv("GROQ_API_KEY", "").strip()
 GROQ_MODEL = "qwen/qwen3.8-27b"
 
@@ -335,14 +331,13 @@ client = AsyncOpenAI(
 )
 
 def get_agent_system_prompt(agent: Agent) -> str:
-    """Dynamically resolves the system prompt based on the specific agent selected."""
     cfg_prompt = agent.connection_config.get("system_prompt")
     if cfg_prompt:
         return cfg_prompt
     
     name = agent.name.lower()
     if "alex" in name or "hr" in name or "recruit" in name:
-        return "You are Alex, an HR talent recruiter at Maica. You pre-screen candidates for engineering roles. Ask about their distributed systems and Python experience, answer questions about our hybrid work policy (2 days in office), and discuss compensation ($150k-$180k)."
+        return "You are Alex, an HR recruiter at Maica. You pre-screen candidates for open software engineering positions (Node.js, Python, fullstack, distributed systems). Ask about the candidate's specific background in whatever role or technology they mention, qualify their years of experience, explain our hybrid policy (2 days in office), and confirm our compensation range ($150k-$180k)."
     elif "leo" in name or "restaurant" in name or "dining" in name:
         return "You are Leo, the host at Bistro Modern. You handle dinner reservations and table availability. Inquire about party size, date/time, and dietary requirements."
     elif "clara" in name or "hospital" in name or "health" in name:
@@ -351,7 +346,6 @@ def get_agent_system_prompt(agent: Agent) -> str:
     return f"You are {agent.name}, an AI voice assistant. Answer caller inquiries professionally in your assigned role."
 
 async def generate_call_audio(run_id: str, transcript: list):
-    """Generates sequential neural audio recording for the full conversation."""
     audio_path = os.path.join(AUDIO_DIR, f"{run_id}.mp3")
     try:
         with open(audio_path, "wb") as f_out:
@@ -359,7 +353,6 @@ async def generate_call_audio(run_id: str, transcript: list):
                 text = item.get("text", "").replace("[END CONVERSATION]", "").strip()
                 if not text:
                     continue
-                # Aria for Agent, Guy for Persona
                 voice = "en-US-AriaNeural" if item.get("role") == "agent" else "en-US-GuyNeural"
                 communicate = edge_tts.Communicate(text, voice)
                 async for chunk in communicate.stream():
@@ -369,17 +362,40 @@ async def generate_call_audio(run_id: str, transcript: list):
         print(f"Audio compilation notice: {e}")
 
 async def generate_persona_response(persona: Persona, scenario: str, transcript: list) -> str:
-    messages = [
-        {"role": "system", "content": f"You are a human caller in a phone call. Persona Name: {persona.name}. Persona Background: {persona.background}. Persona Tone: {persona.tone}. Call Goal: {scenario}. IMPORTANT: Stay 100% in character with your persona background and goal! Speak naturally in 1-2 concise sentences like a real human on the phone. Only say '[END CONVERSATION]' at the very end when your call goal is completed."}
-    ]
-    for msg in transcript:
-        messages.append({"role": "user" if msg["role"] == "agent" else "assistant", "content": msg["text"]})
+    system_instruction = f"""You are a human caller making a phone call.
+Caller Name: {persona.name}
+Tone: {persona.tone}
+
+YOUR EXACT GOAL AND TEST SCENARIO FOR THIS CALL:
+{scenario}
+
+CRITICAL RULES:
+1. You MUST follow your TEST SCENARIO exactly! If it specifies 'Senior Node developer' and '2 years experience', you MUST ask about Senior Node developer and mention your 2 years experience. Never substitute or change the technology/role.
+2. Do NOT mention any role or tech stack not present in the scenario.
+3. Keep your replies concise (1-2 sentences), natural, and realistic like a real telephone call.
+4. Only say '[END CONVERSATION]' at the very end when your call goal is completed."""
+
+    messages = [{"role": "system", "content": system_instruction}]
     
+    if not transcript:
+        # First turn: User initiates the call based on scenario
+        messages.append({"role": "user", "content": f"The agent has answered the phone. State your initial question or reason for calling based on: {scenario}"})
+    else:
+        for idx, msg in enumerate(transcript):
+            is_last = (idx == len(transcript) - 1)
+            if msg["role"] == "agent":
+                content = msg["text"]
+                if is_last:
+                    content += f"\n\n[Instruction: Respond naturally as {persona.name} to the agent's statement, strictly adhering to your scenario: '{scenario}'. Be concise (1-2 sentences).]"
+                messages.append({"role": "user", "content": content})
+            else:
+                messages.append({"role": "assistant", "content": msg["text"]})
+
     try:
         response = await client.chat.completions.create(
             model=GROQ_MODEL,
             messages=messages,
-            temperature=0.7,
+            temperature=0.4,
             max_tokens=150
         )
         return (response.choices[0].message.content or "").strip()
@@ -388,7 +404,6 @@ async def generate_persona_response(persona: Persona, scenario: str, transcript:
         return "Thank you for the information, that answers my question. [END CONVERSATION]"
 
 async def generate_agent_response(agent: Agent, transcript: list) -> str:
-    # 1. External REST/Webhook if configured
     if agent.connection_type in ["rest_api", "webhook"]:
         url = agent.connection_config.get("endpoint_url") or agent.connection_config.get("url")
         if url and "http" in url and not "maica24.com" in url:
@@ -403,11 +418,15 @@ async def generate_agent_response(agent: Agent, transcript: list) -> str:
             except Exception as e:
                 print(f"REST agent call notice: {e}")
 
-    # 2. Dynamic Live Agent based on its specific persona and role
     system_prompt = get_agent_system_prompt(agent)
     messages = [{"role": "system", "content": f"{system_prompt}\n\nKeep your responses natural, conversational, and concise (1-2 sentences), like a real spoken phone assistant."}]
-    for msg in transcript:
-        messages.append({"role": "user" if msg["role"] == "persona" else "assistant", "content": msg["text"]})
+    
+    if not transcript:
+        # Initial greeting prompt
+        messages.append({"role": "user", "content": f"The phone has just been answered. Provide your standard 1-sentence opening greeting as {agent.name}."})
+    else:
+        for msg in transcript:
+            messages.append({"role": "user" if msg["role"] == "persona" else "assistant", "content": msg["text"]})
     
     try:
         response = await client.chat.completions.create(
@@ -444,10 +463,15 @@ Respond ONLY with a valid JSON object:
     "reasoning": "Detailed 1-2 sentence explanation of why it passed or failed."
 }}"""
 
+    messages = [
+        {"role": "system", "content": "You are an expert AI evaluator judging an agent conversation."},
+        {"role": "user", "content": prompt}
+    ]
+
     try:
         response = await client.chat.completions.create(
             model=GROQ_MODEL,
-            messages=[{"role": "system", "content": prompt}],
+            messages=messages,
             temperature=0.1,
             max_tokens=200
         )
@@ -499,7 +523,7 @@ async def run_simulation_engine(sim: Simulation):
         agent_greeting = await generate_agent_response(agent, [])
         transcript.append({"role": "agent", "text": agent_greeting})
         
-        # 2. Persona responds
+        # 2. Persona responds following the exact test scenario
         first_persona = await generate_persona_response(persona, test_case.scenario, transcript)
         transcript.append({"role": "persona", "text": first_persona})
         
@@ -521,7 +545,6 @@ async def run_simulation_engine(sim: Simulation):
                 
             await asyncio.sleep(0.3)
 
-        # Attach real conversation timestamps and TTFA latencies
         TIMESTAMPS = ["00:04", "00:18", "01:05", "01:42", "02:30", "03:15", "03:26", "04:10", "04:22", "04:50"]
         for idx, item in enumerate(transcript):
             item["time"] = TIMESTAMPS[idx] if idx < len(TIMESTAMPS) else f"0{idx//2}:{20 + (idx%2)*25}"
