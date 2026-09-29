@@ -379,7 +379,7 @@ export default function LiveCallPage() {
               ))}
             </select>
             <p className="text-xs text-gray-500">
-              {selectedAgent?.connection_config?.system_prompt ? selectedAgent.connection_config.system_prompt.slice(0, 110) + "..." : "Standard voice receptionist"}
+              {(selectedAgent?.connection_config?.system_prompt as string) ? (selectedAgent?.connection_config?.system_prompt as string).slice(0, 110) + "..." : "Standard voice receptionist"}
             </p>
           </div>
 

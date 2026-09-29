@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { Database, Plus, X, Wand2, Loader2, Upload } from "lucide-react";
+import { Database, Plus, X, Wand2, Loader2, Upload, Edit, Trash2 } from "lucide-react";
 import Papa from "papaparse";
 
 interface TestCase {
@@ -21,6 +21,8 @@ export default function TestSetsPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formData, setFormData] = useState({ name: "", description: "" });
   const [testCases, setTestCases] = useState<TestCase[]>([{ scenario: "", expected_outcome: "" }]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -32,12 +34,15 @@ export default function TestSetsPage() {
   }, []);
 
   const fetchTestSets = async () => {
+    setIsLoading(true);
     try {
       const res = await fetch("http://localhost:8000/api/test-sets");
       const data = await res.json();
       setTestSets(data);
     } catch (error) {
       console.error("Failed to fetch test sets:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -107,19 +112,49 @@ export default function TestSetsPage() {
     e.preventDefault();
     try {
       const payload = { ...formData, test_cases: testCases.filter(tc => tc.scenario) };
-      const res = await fetch("http://localhost:8000/api/test-sets", {
-        method: "POST",
+      const url = editingId 
+        ? `http://localhost:8000/api/test-sets/${editingId}`
+        : "http://localhost:8000/api/test-sets";
+      const method = editingId ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       if (res.ok) {
         setIsFormOpen(false);
+        setEditingId(null);
         setFormData({ name: "", description: "" });
         setTestCases([{ scenario: "", expected_outcome: "" }]);
         fetchTestSets();
       }
     } catch (error) {
-      console.error("Failed to create test set:", error);
+      console.error("Failed to save test set:", error);
+    }
+  };
+
+  const handleEdit = (testSet: TestSet) => {
+    setFormData({
+      name: testSet.name,
+      description: testSet.description
+    });
+    setTestCases(testSet.test_cases.length > 0 ? [...testSet.test_cases] : [{ scenario: "", expected_outcome: "" }]);
+    setEditingId(testSet.id);
+    setIsFormOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this test set?")) return;
+    try {
+      const res = await fetch(`http://localhost:8000/api/test-sets/${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        fetchTestSets();
+      }
+    } catch (error) {
+      console.error("Failed to delete test set:", error);
     }
   };
 
@@ -134,7 +169,12 @@ export default function TestSetsPage() {
           <p className="text-gray-600 dark:text-gray-400 mt-1">A collection of test cases that tell the simulated user what to do.</p>
         </div>
         <button 
-          onClick={() => setIsFormOpen(true)}
+          onClick={() => {
+            setFormData({ name: "", description: "" });
+            setTestCases([{ scenario: "", expected_outcome: "" }]);
+            setEditingId(null);
+            setIsFormOpen(true);
+          }}
           className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 dark:hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -145,8 +185,8 @@ export default function TestSetsPage() {
       {isFormOpen && (
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm rounded-xl p-6">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Create New Test Set</h2>
-            <button onClick={() => setIsFormOpen(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white transition-colors">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{editingId ? "Edit Test Set" : "Create New Test Set"}</h2>
+            <button onClick={() => { setIsFormOpen(false); setEditingId(null); }} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white transition-colors">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -266,16 +306,27 @@ export default function TestSetsPage() {
               </button>
             </div>
             
-            <div className="flex justify-end pt-4 border-t border-gray-200 dark:border-gray-800">
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-800">
+              <button 
+                type="button" 
+                onClick={() => { setIsFormOpen(false); setEditingId(null); }}
+                className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-900 dark:text-white rounded-lg font-medium transition-colors"
+              >
+                Cancel
+              </button>
               <button type="submit" className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 dark:hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors">
-                Save Test Set
+                {editingId ? "Update Test Set" : "Save Test Set"}
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {testSets.length === 0 && !isFormOpen ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center p-12">
+          <Loader2 className="w-8 h-8 animate-spin text-gray-500" />
+        </div>
+      ) : testSets.length === 0 && !isFormOpen ? (
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-12 text-center shadow-sm">
           <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
             <Database className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
@@ -295,13 +346,29 @@ export default function TestSetsPage() {
           {testSets.map((testSet) => (
             <div key={testSet.id} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-6 shadow-sm hover:border-emerald-200 dark:hover:border-gray-700 transition-colors">
               <div className="flex justify-between items-start mb-4">
-                <div>
+                <div className="flex-1">
                   <h3 className="font-bold text-gray-900 dark:text-white text-xl">{testSet.name}</h3>
                   <p className="text-sm text-gray-500 mt-1">{testSet.description}</p>
                 </div>
-                <span className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs font-semibold px-3 py-1 rounded-full">
-                  {testSet.test_cases.length} Cases
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs font-semibold px-3 py-1 rounded-full">
+                    {testSet.test_cases.length} Cases
+                  </span>
+                  <div className="flex gap-2 border-l border-gray-200 dark:border-gray-800 pl-3">
+                    <button 
+                      onClick={() => handleEdit(testSet)}
+                      className="p-1.5 text-gray-400 hover:text-emerald-500 dark:hover:text-emerald-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(testSet.id)}
+                      className="p-1.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
               </div>
               
               <div className="space-y-2 mt-4 pt-4 border-t border-gray-100 dark:border-gray-800/50 max-h-64 overflow-y-auto">

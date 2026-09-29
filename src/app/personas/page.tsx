@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Users, Plus, X } from "lucide-react";
+import { Users, Plus, X, Edit, Trash2, Loader2 } from "lucide-react";
 
 interface Persona {
   id: string;
@@ -15,35 +15,71 @@ export default function PersonasPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formData, setFormData] = useState({ name: "", background: "", tone: "neutral" });
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
   useEffect(() => {
     fetchPersonas();
   }, []);
 
   const fetchPersonas = async () => {
+    setIsLoading(true);
     try {
       const res = await fetch("http://localhost:8000/api/personas");
       const data = await res.json();
       setPersonas(data);
     } catch (error) {
       console.error("Failed to fetch personas:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("http://localhost:8000/api/personas", {
-        method: "POST",
+      const url = editingId 
+        ? `http://localhost:8000/api/personas/${editingId}`
+        : "http://localhost:8000/api/personas";
+      const method = editingId ? "PUT" : "POST";
+      
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
       if (res.ok) {
         setIsFormOpen(false);
+        setEditingId(null);
         setFormData({ name: "", background: "", tone: "neutral" });
         fetchPersonas();
       }
     } catch (error) {
-      console.error("Failed to create persona:", error);
+      console.error("Failed to save persona:", error);
+    }
+  };
+
+  const handleEdit = (persona: Persona) => {
+    setFormData({
+      name: persona.name,
+      background: persona.background,
+      tone: persona.tone
+    });
+    setEditingId(persona.id);
+    setIsFormOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this persona?")) return;
+    try {
+      const res = await fetch(`http://localhost:8000/api/personas/${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        fetchPersonas();
+      }
+    } catch (error) {
+      console.error("Failed to delete persona:", error);
     }
   };
 
@@ -58,7 +94,11 @@ export default function PersonasPage() {
           <p className="text-gray-400 mt-1">The simulated users who will talk to your agent.</p>
         </div>
         <button 
-          onClick={() => setIsFormOpen(true)}
+          onClick={() => {
+            setFormData({ name: "", background: "", tone: "neutral" });
+            setEditingId(null);
+            setIsFormOpen(true);
+          }}
           className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-medium transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -69,8 +109,8 @@ export default function PersonasPage() {
       {isFormOpen && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-white">Create New Persona</h2>
-            <button onClick={() => setIsFormOpen(false)} className="text-gray-400 hover:text-white">
+            <h2 className="text-lg font-semibold text-white">{editingId ? "Edit Persona" : "Create New Persona"}</h2>
+            <button onClick={() => { setIsFormOpen(false); setEditingId(null); }} className="text-gray-400 hover:text-white">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -109,14 +149,27 @@ export default function PersonasPage() {
                 onChange={(e) => setFormData({...formData, background: e.target.value})}
               />
             </div>
-            <button type="submit" className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-medium">
-              Save Persona
-            </button>
+            <div className="flex justify-end gap-3 mt-4">
+              <button 
+                type="button"
+                onClick={() => { setIsFormOpen(false); setEditingId(null); }}
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg font-medium"
+              >
+                Cancel
+              </button>
+              <button type="submit" className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-medium">
+                {editingId ? "Update Persona" : "Save Persona"}
+              </button>
+            </div>
           </form>
         </div>
       )}
 
-      {personas.length === 0 && !isFormOpen ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center p-12">
+          <Loader2 className="w-8 h-8 animate-spin text-gray-500" />
+        </div>
+      ) : personas.length === 0 && !isFormOpen ? (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
           <Users className="w-12 h-12 text-gray-700 mx-auto mb-3" />
           <h3 className="text-lg font-medium text-gray-300">No personas yet</h3>
@@ -127,12 +180,30 @@ export default function PersonasPage() {
           {personas.map((persona) => (
             <div key={persona.id} className="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors">
               <div className="flex justify-between items-start mb-2">
-                <h3 className="font-bold text-white text-lg">{persona.name}</h3>
-                <span className="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded-full uppercase tracking-wider">
-                  {persona.tone}
-                </span>
+                <div>
+                  <h3 className="font-bold text-white text-lg flex items-center gap-2">
+                    {persona.name}
+                    <span className="text-xs bg-gray-800 text-gray-300 px-2 py-0.5 rounded-full uppercase tracking-wider font-normal">
+                      {persona.tone}
+                    </span>
+                  </h3>
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => handleEdit(persona)}
+                    className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-gray-800 rounded transition-colors"
+                  >
+                    <Edit className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={() => handleDelete(persona.id)}
+                    className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-gray-800 rounded transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-              <p className="text-sm text-gray-400 line-clamp-3">{persona.background}</p>
+              <p className="text-sm text-gray-400 mt-2">{persona.background}</p>
             </div>
           ))}
         </div>

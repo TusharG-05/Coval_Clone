@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Bot, Plus, X, Globe, Phone, Code, Cpu, Info } from "lucide-react";
+import { Bot, Plus, X, Globe, Phone, Code, Cpu, Info, Edit, Trash2, Loader2 } from "lucide-react";
 
 const InfoTooltip = ({ content, onClick }: { content: string, onClick?: () => void }) => (
   <div className="relative group inline-block ml-2 cursor-pointer">
@@ -30,18 +30,23 @@ export default function AgentsPage() {
     connection_config: { system_prompt: "" } as Record<string, unknown>
   };
   const [formData, setFormData] = useState(initialFormData);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchAgents();
   }, []);
 
   const fetchAgents = async () => {
+    setIsLoading(true);
     try {
       const res = await fetch("http://localhost:8000/api/agents");
       const data = await res.json();
       setAgents(data);
     } catch (error) {
       console.error("Failed to fetch agents:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -62,18 +67,49 @@ export default function AgentsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("http://localhost:8000/api/agents", {
-        method: "POST",
+      const url = editingId 
+        ? `http://localhost:8000/api/agents/${editingId}`
+        : "http://localhost:8000/api/agents";
+      const method = editingId ? "PUT" : "POST";
+      
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
       if (res.ok) {
         setIsFormOpen(false);
+        setEditingId(null);
         setFormData(initialFormData);
         fetchAgents();
       }
     } catch (error) {
-      console.error("Failed to create agent:", error);
+      console.error("Failed to save agent:", error);
+    }
+  };
+
+  const handleEdit = (agent: Agent) => {
+    setFormData({
+      name: agent.name,
+      type: agent.type,
+      connection_type: agent.connection_type,
+      connection_config: { ...agent.connection_config } as Record<string, unknown>
+    });
+    setEditingId(agent.id);
+    setIsFormOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this agent?")) return;
+    try {
+      const res = await fetch(`http://localhost:8000/api/agents/${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        fetchAgents();
+      }
+    } catch (error) {
+      console.error("Failed to delete agent:", error);
     }
   };
 
@@ -97,7 +133,11 @@ export default function AgentsPage() {
           <p className="text-gray-400 mt-1">Connections to the voice or chat agents you want to test.</p>
         </div>
         <button 
-          onClick={() => setIsFormOpen(true)}
+          onClick={() => {
+            setFormData(initialFormData);
+            setEditingId(null);
+            setIsFormOpen(true);
+          }}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -108,8 +148,8 @@ export default function AgentsPage() {
       {isFormOpen && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-white">Create New Agent Connection</h2>
-            <button onClick={() => setIsFormOpen(false)} className="text-gray-400 hover:text-white">
+            <h2 className="text-lg font-semibold text-white">{editingId ? "Edit Agent Connection" : "Create New Agent Connection"}</h2>
+            <button onClick={() => { setIsFormOpen(false); setEditingId(null); }} className="text-gray-400 hover:text-white">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -285,14 +325,27 @@ export default function AgentsPage() {
               )}
             </div>
 
-            <button type="submit" className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium w-full mt-4">
-              Save Agent Connection
-            </button>
+            <div className="flex justify-end gap-3 mt-4">
+              <button 
+                type="button"
+                onClick={() => { setIsFormOpen(false); setEditingId(null); }}
+                className="px-6 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-xl font-medium w-full"
+              >
+                Cancel
+              </button>
+              <button type="submit" className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium w-full">
+                {editingId ? "Update Agent Connection" : "Save Agent Connection"}
+              </button>
+            </div>
           </form>
         </div>
       )}
 
-      {agents.length === 0 && !isFormOpen ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center p-12">
+          <Loader2 className="w-8 h-8 animate-spin text-gray-500" />
+        </div>
+      ) : agents.length === 0 && !isFormOpen ? (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
           <Bot className="w-12 h-12 text-gray-700 mx-auto mb-3" />
           <h3 className="text-lg font-medium text-gray-300">No agents yet</h3>
@@ -304,10 +357,26 @@ export default function AgentsPage() {
             <div key={agent.id} className="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors flex flex-col justify-between">
               <div>
                 <div className="flex justify-between items-start mb-4">
-                  <h3 className="font-bold text-white text-xl">{agent.name}</h3>
-                  <span className="text-xs font-semibold bg-gray-800 text-gray-300 px-3 py-1 rounded-full uppercase tracking-wider">
-                    {agent.type}
-                  </span>
+                  <div className="flex flex-col gap-1">
+                    <h3 className="font-bold text-white text-xl">{agent.name}</h3>
+                    <span className="text-xs font-semibold bg-gray-800 text-gray-300 px-3 py-1 rounded-full uppercase tracking-wider w-fit">
+                      {agent.type}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => handleEdit(agent)}
+                      className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-gray-800 rounded transition-colors"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(agent.id)}
+                      className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-gray-800 rounded transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="space-y-2">

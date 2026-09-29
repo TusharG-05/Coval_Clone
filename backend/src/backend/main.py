@@ -707,6 +707,30 @@ def create_agent(agent: AgentBase):
         session.refresh(new_agent)
         return new_agent
 
+@app.put("/api/agents/{agent_id}", response_model=Agent)
+def update_agent(agent_id: str, agent: AgentBase):
+    with Session(engine) as session:
+        db_agent = session.get(Agent, agent_id)
+        if not db_agent:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        agent_data = agent.model_dump(exclude_unset=True)
+        for key, value in agent_data.items():
+            setattr(db_agent, key, value)
+        session.add(db_agent)
+        session.commit()
+        session.refresh(db_agent)
+        return db_agent
+
+@app.delete("/api/agents/{agent_id}")
+def delete_agent(agent_id: str):
+    with Session(engine) as session:
+        db_agent = session.get(Agent, agent_id)
+        if not db_agent:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        session.delete(db_agent)
+        session.commit()
+        return {"status": "ok"}
+
 @app.get("/api/personas", response_model=list[Persona])
 def get_personas():
     with Session(engine) as session:
@@ -720,6 +744,30 @@ def create_persona(persona: PersonaBase):
         session.commit()
         session.refresh(new_persona)
         return new_persona
+
+@app.put("/api/personas/{persona_id}", response_model=Persona)
+def update_persona(persona_id: str, persona: PersonaBase):
+    with Session(engine) as session:
+        db_persona = session.get(Persona, persona_id)
+        if not db_persona:
+            raise HTTPException(status_code=404, detail="Persona not found")
+        persona_data = persona.model_dump(exclude_unset=True)
+        for key, value in persona_data.items():
+            setattr(db_persona, key, value)
+        session.add(db_persona)
+        session.commit()
+        session.refresh(db_persona)
+        return db_persona
+
+@app.delete("/api/personas/{persona_id}")
+def delete_persona(persona_id: str):
+    with Session(engine) as session:
+        db_persona = session.get(Persona, persona_id)
+        if not db_persona:
+            raise HTTPException(status_code=404, detail="Persona not found")
+        session.delete(db_persona)
+        session.commit()
+        return {"status": "ok"}
 
 @app.get("/api/test-sets", response_model=list[TestSet])
 def get_test_sets():
@@ -735,6 +783,30 @@ def create_test_set(test_set: TestSetBase):
         session.refresh(new_test_set)
         return new_test_set
 
+@app.put("/api/test-sets/{test_set_id}", response_model=TestSet)
+def update_test_set(test_set_id: str, test_set: TestSetBase):
+    with Session(engine) as session:
+        db_test_set = session.get(TestSet, test_set_id)
+        if not db_test_set:
+            raise HTTPException(status_code=404, detail="TestSet not found")
+        test_set_data = test_set.model_dump(exclude_unset=True)
+        for key, value in test_set_data.items():
+            setattr(db_test_set, key, value)
+        session.add(db_test_set)
+        session.commit()
+        session.refresh(db_test_set)
+        return db_test_set
+
+@app.delete("/api/test-sets/{test_set_id}")
+def delete_test_set(test_set_id: str):
+    with Session(engine) as session:
+        db_test_set = session.get(TestSet, test_set_id)
+        if not db_test_set:
+            raise HTTPException(status_code=404, detail="TestSet not found")
+        session.delete(db_test_set)
+        session.commit()
+        return {"status": "ok"}
+
 @app.get("/api/metrics", response_model=list[Metric])
 def get_metrics():
     with Session(engine) as session:
@@ -748,6 +820,30 @@ def create_metric(metric: MetricBase):
         session.commit()
         session.refresh(new_metric)
         return new_metric
+
+@app.put("/api/metrics/{metric_id}", response_model=Metric)
+def update_metric(metric_id: str, metric: MetricBase):
+    with Session(engine) as session:
+        db_metric = session.get(Metric, metric_id)
+        if not db_metric:
+            raise HTTPException(status_code=404, detail="Metric not found")
+        metric_data = metric.model_dump(exclude_unset=True)
+        for key, value in metric_data.items():
+            setattr(db_metric, key, value)
+        session.add(db_metric)
+        session.commit()
+        session.refresh(db_metric)
+        return db_metric
+
+@app.delete("/api/metrics/{metric_id}")
+def delete_metric(metric_id: str):
+    with Session(engine) as session:
+        db_metric = session.get(Metric, metric_id)
+        if not db_metric:
+            raise HTTPException(status_code=404, detail="Metric not found")
+        session.delete(db_metric)
+        session.commit()
+        return {"status": "ok"}
 
 @app.get("/api/simulations", response_model=list[Simulation])
 def get_simulations():
